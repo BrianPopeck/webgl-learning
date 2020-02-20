@@ -2,13 +2,15 @@
 
 <!DOCTYPE html>
 
-<head></head>
+<head>
+    <meta charset="utf-8"/>
+</head>
 
 <body>
     <canvas id="glCanvas" width="640" height="480"></canvas>
 </body>
 
-
+<script src="gl-matrix.js"></script>    <!-- include to simplify matrix operations -->
 <script>
     main(); // call the WebGL code as soon as the script loads
 
@@ -23,10 +25,177 @@
             return;
         }
 
-        // clear the canvas to black
-        gl_context.clearColor(0, 0, 0, 1);
-        gl_context.clear(gl_context.COLOR_BUFFER_BIT);
-    }  
+
+        // note the use of multiline template literals so that shader code can be readable
+
+        // project the vertex from world space to screen space
+        const vertex_shader_source = `
+            attribute vec4 aVertexPosition;
+
+            uniform mat4 uModelViewMatrix;
+            uniform mat4 uProjectionMatrix;
+
+            void main() {
+                gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
+            }
+        `;
+
+        // make the pixel white
+        const fragment_shader_source = `
+            void main() {
+                gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+            }
+        `;
+
+        
+        const shader_program = initShaderProgram(gl_context, vertex_shader_source, fragment_shader_source);
+
+        // specify where to find attribute (for vertex shader) and uniform (for fragment shader) variables
+        const program_info = {
+            program: shader_program,
+            attribute_locations: {
+                vertexPosition: gl_context.getAttribLocation(shader_program, "aVertexPosition"),
+            },
+            uniform_locations: {
+                projectionMatrix: gl_context.getUniformLocation(shader_program, "uProjectionMatrix"),
+                modelViewMatrix: gl_context.getUniformLocation(shader_program, "uModelViewMatrix"),
+            }
+        }
+
+        // do the actual drawing
+        const buffers = initBuffers(gl_context);
+        drawScene(gl_context, program_info, buffers);
+    }
+
+    function loadShader(gl_context, shader_type, shader_source)
+    {
+        const shader = gl_context.createShader(shader_type);
+
+        // compile shader composed of source
+        gl_context.shaderSource(shader, shader_source);
+        gl_context.compileShader(shader);
+
+        if (!gl_context.getShaderParameter(shader, gl_context.COMPILE_STATUS)) {    // copilation failed
+            alert("Could not compile shader: " + gl_context.getShaderInfoLog(shader));
+            gl_context.deleteShader(shader);
+            return null;
+        }
+
+        return shader;  // successfully compiled shader
+    }
+
+    function initShaderProgram(gl_context, vertex_shader_source, fragment_shader_source)
+    {
+        const vertex_shader = loadShader(gl_context, gl_context.VERTEX_SHADER, vertex_shader_source);
+        const fragment_shader = loadShader(gl_context, gl_context.FRAGMENT_SHADER, fragment_shader_source);
+
+        const shader_program = gl_context.createProgram();
+        gl_context.attachShader(shader_program, vertex_shader);
+        gl_context.attachShader(shader_program, fragment_shader);
+        gl_context.linkProgram(shader_program);  // link the compiled shader programs
+
+        if (!gl_context.getProgramParameter(shader_program, gl_context.LINK_STATUS)) {  // failed to link/create shader program
+            alert("unable to link shaders: " + gl_context.getProgramInfoLog(shader_program));
+            return null;
+        }
+
+        return shader_program;  // successfully compiled/linked program
+    }
+
+
+    // create vertex buffer
+    function initBuffers(gl_context)
+    {
+        const position_buffer = gl_context.createBuffer();
+
+        gl_context.bindBuffer(gl_context.ARRAY_BUFFER, position_buffer);
+
+        // specify the vertices of the two triangles to render to make a square (top left triangle then bottom right triangle)
+        const positions = [
+            1.0, 1.0,
+            -1.0, 1.0,
+            1.0, -1.0,
+            -1.0, -1.0,
+        ];
+
+        gl_context.bufferData(gl_context.ARRAY_BUFFER,
+                                new Float32Array(positions),
+                                gl_context.STATIC_DRAW);
+
+        return {
+            position: position_buffer,
+        };  // return object with vertices
+    }
+
+    // generic way to draw scene
+    function drawScene(gl_context, program_info, buffers)
+    {
+        gl_context.clearColor(0.0, 0.0, 0.0, 1.0);  // clear to black
+        gl_context.clearDepth(1);   // clear all objects
+        gl_context.enable(gl_context.DEPTH_TEST);   // allow z-buffering
+        gl_context.depthFunc(gl_context.LEQUAL);    // objects in front block objects behind
+
+        gl_context.clear(gl_context.COLOR_BUFFER_BIT | gl_context.DEPTH_BUFFER_BIT);
+
+        const fov = 45 * Math.PI / 180; // field of view is 45 degrees
+        const aspect = gl_context.canvas.clientWidth / gl_context.canvas.clientHeight;
+        const z_near = 0.1; // closest object to render
+        const z_far = 100.0;  // farthest away object to render
+        const projection_matrix = mat4.create();
+
+        mat4.perspective(projection_matrix,
+                            fov,
+                            aspect,
+                            z_near,
+                            z_far); // helper library to automatically calculate perspective matrix (using perspective view rather than orthographic)
+        const model_view_matrix = mat4.create();    // starts at the origin
+
+        mat4.translate(model_view_matrix,
+                        model_view_matrix,
+                        [-0.0,0.0,-6.0]);   // move drawing position by 6 units
+
+
+        // specify how to use position buffer
+        {
+            const num_components = 2;
+            const type = gl_context.FLOAT;
+            const normalize = false;
+            const stride = 0;
+
+            const offset = 0;   
+            gl_context.bindBuffer(gl_context.ARRAY_BUFFER, buffers.position);
+            gl_context.vertexAttribPointer(
+                program_info.attribute_locations.vertexPosition,
+                num_components,
+                type,
+                normalize,
+                stride,
+                offset);
+            gl_context.enableVertexAttribArray(
+                program_info.attribute_locations.vertexPosition);
+        }
+
+        // use the right program
+        gl_context.useProgram(program_info.program);
+
+        // set our perspective matrix for projection, set model view matrix for camera offset
+        gl_context.uniformMatrix4fv(
+            program_info.uniform_locations.projectionMatrix,
+            false,
+            projection_matrix);
+        gl_context.uniformMatrix4fv(
+            program_info.uniform_locations.modelViewMatrix,
+            false,
+            model_view_matrix);
+
+        {
+            const offset = 0;
+            const vertex_count = 4;  // our square has 4 vertices (like most squares)
+            gl_context.drawArrays(gl_context.TRIANGLE_STRIP, offset, vertex_count);
+        }
+
+    }
+
 
 </script>
 
