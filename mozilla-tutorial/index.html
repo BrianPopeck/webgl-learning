@@ -1,0 +1,33 @@
+<!-- Derivate work from the tutorial by Mozilla at https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/Tutorial/Getting_started_with_WebGL -->
+
+<!DOCTYPE html>
+
+<head></head>
+
+<body>
+    <canvas id="glCanvas" width="640" height="480"></canvas>
+</body>
+
+
+<script>
+    main(); // call the WebGL code as soon as the script loads
+
+    // handle rendering on the canvas via WebGL
+    function main()
+    {
+        const canvas = document.querySelector("#glCanvas");
+        const gl_context = canvas.getContext("webgl");
+
+        if (gl_context === null) { // could not get WebGL context
+            alert ("Was not able to initialize WebGL");
+            return;
+        }
+
+        // clear the canvas to black
+        gl_context.clearColor(0, 0, 0, 1);
+        gl_context.clear(gl_context.COLOR_BUFFER_BIT);
+    }  
+
+</script>
+
+</html>
